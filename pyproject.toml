@@ -1,0 +1,70 @@
+[project]
+name = "cogno-persona"
+version = "0.1.0"
+description = "The prompt store for who a Cogno agent IS — a typed Persona (scope/execution/limits/voice prompts + by-name module binding + custom rules), version-aware loader, retrieval store, embedding selector, and pure prompt composition. Infra-agnostic, host-injected."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Sudoers AI" }]
+keywords = ["persona", "prompts", "prompt-store", "agents", "llm", "versioning"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
+# pydantic for the typed model (DB/JSON (de)serialization + closed-vocab validation),
+# matching cogno-anima. The Embedder used by the selector is imported type-only from
+# cogno-synapse (TYPE_CHECKING) so there is no runtime dependency on it.
+dependencies = ["pydantic>=2.0"]
+
+[project.urls]
+Homepage = "https://github.com/sudoers-ai/cogno-persona"
+Repository = "https://github.com/sudoers-ai/cogno-persona"
+Issues = "https://github.com/sudoers-ai/cogno-persona/issues"
+
+[project.optional-dependencies]
+yaml = ["pyyaml>=6.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.8",
+]
+
+[build-system]
+requires = ["setuptools>=77.0.3", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["cogno_persona*"]
+
+[tool.setuptools.package-data]
+cogno_persona = ["py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+# pyyaml is an optional [yaml] extra with no stubs; treat its untyped import the
+# same whether it is installed (local) or absent (CI) so the check is deterministic.
+disable_error_code = ["import-untyped"]
+files = ["cogno_persona"]
+warn_unused_ignores = true
