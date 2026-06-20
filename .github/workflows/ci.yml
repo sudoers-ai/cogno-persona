@@ -21,6 +21,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+          # cogno-synapse is a type-only dep of the lib, but the integration tests
+          # exercise the real OllamaEmbedder path, so install it (+ its own dep
+          # cogno-homeo) from git — neither is on PyPI yet. Without it the
+          # integration module importorskips to zero collected tests and pytest
+          # exits 5 ("no tests collected"), failing the step.
+          pip install "cogno-homeo @ git+https://github.com/sudoers-ai/cogno-homeo.git"
+          pip install "cogno-synapse @ git+https://github.com/sudoers-ai/cogno-synapse.git"
       - name: Lint (ruff)
         run: ruff check cogno_persona cognobench tests examples
       - name: Type-check (mypy)
@@ -30,4 +37,7 @@ jobs:
       - name: Routing bench smoke (deterministic, no network)
         run: python cognobench.py --stub --min-score 100
       - name: Integration tests (auto-skip without Ollama / cogno-synapse)
-        run: pytest tests/integration -q
+        # These need a live Ollama (absent in CI), so they skip. When the whole
+        # module skips at importorskip, pytest collects zero tests and exits 5
+        # ("no tests collected") — tolerate that; fail on any other non-zero.
+        run: pytest tests/integration -q || [ $? -eq 5 ]
