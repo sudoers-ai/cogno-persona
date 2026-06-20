@@ -16,7 +16,7 @@ from typing import List, Optional, Sequence
 
 from cogno_persona import Persona, PersonaSelector
 
-from cognobench.routing_cases import BASE_ID, CASES, CATALOG, RoutingCase
+from cognobench.routing_cases import ALL_CASES, BASE_ID, CASES, CATALOG, RoutingCase
 from cognobench.stub_embedder import StubEmbedder
 
 
@@ -58,8 +58,10 @@ async def run_bench(
     selector = PersonaSelector(embedder, threshold=threshold)
     results: List[CaseResult] = []
     for case in cases:
+        case_personas = list(case.personas) or list(personas)
+        case_base = case.base or base_id
         res = await selector.select(
-            case.query, personas, base_persona_id=base_id,
+            case.query, case_personas, base_persona_id=case_base,
             intent_class=case.intent or None,
         )
         results.append(CaseResult(
@@ -103,7 +105,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--base-url", default="http://localhost:11434", help="Ollama base URL")
     args = parser.parse_args(argv)
 
-    cases = CASES[: args.limit] if args.limit else CASES
+    # The stub embedder is keyword-one-hot and cannot resolve the semantically-close
+    # ported tenant cases (by design) — run only the stub-safe single-tenant suite
+    # in --stub mode; real mode runs everything.
+    selected = CASES if args.stub else ALL_CASES
+    cases = selected[: args.limit] if args.limit else selected
     embedder = _build_embedder(args)
     report = asyncio.run(run_bench(embedder, cases=cases, threshold=args.threshold))
     print(format_report(report))

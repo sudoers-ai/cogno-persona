@@ -63,11 +63,13 @@ async def test_routes_clear_english_specialists(query, expected):
 
 @requires_embed
 async def test_overall_accuracy_floor():
-    # With English (post-NOUMENO) queries + the SOCIAL skip, nomic-embed-text routes
-    # the realistic cases at 100%. Floor at 90% to catch regressions without being
-    # brittle to one-off embedding drift (see ROUTING_BENCH_RESULTS.md).
+    # Full suite = the single-tenant cases + the ported parent-bench tenant cases
+    # (multitenant_cases.py 16b). With English (post-NOUMENO) queries + the SOCIAL
+    # skip, nomic-embed-text routes them at 100%. Floor at 90% to catch regressions
+    # without being brittle to one-off embedding drift (see ROUTING_BENCH_RESULTS.md).
+    from cognobench.routing_cases import ALL_CASES
     from cognobench.runner import run_bench
-    report = await run_bench(_embedder())
+    report = await run_bench(_embedder(), cases=ALL_CASES)
     assert report.accuracy >= 90.0, f"routing accuracy regressed to {report.accuracy:.1f}%"
 
 

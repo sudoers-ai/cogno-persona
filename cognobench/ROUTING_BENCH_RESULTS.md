@@ -1,8 +1,19 @@
 # Persona routing bench — results
 
-`python3 cognobench.py` scores the `PersonaSelector` on 12 curated cases (a base
-`SECRETARY` + 3 specialists). Run `--stub` for a deterministic keyword embedder
-(no network) or the default for a real Ollama embedder.
+`python3 cognobench.py` scores the `PersonaSelector`. Two suites:
+
+* **single-tenant** (12 cases, shared catalog) — keyword-separable, so the stub
+  embedder routes them 100% (CI plumbing guard).
+* **multi-tenant** (9 cases) — **ported from the parent cogno bench**
+  (`cogno/bench/multitenant_cases.py`, sub-dimension *16b Persona Routing*), each
+  with its own per-tenant catalog (ANALYST/SUPPORT/SALES/BILLING/HR). Translated
+  PT→English (the post-NOUMENO routing input) and including a semantically-close
+  discrimination (invoice → BILLING, not ANALYST) that only a real embedder
+  resolves. The two parent cases with `is_multi_persona=False` are omitted: that
+  flag is host policy (routing off → the host skips the selector).
+
+Run `--stub` for the deterministic embedder (single-tenant suite only) or the
+default for a real Ollama embedder (both suites).
 
 **The queries are canonical English** — the text the selector actually sees in the
 pipeline, since NOUMENO rewrites every input to English *before* routing. Cases
@@ -11,10 +22,10 @@ case carries `intent="SOCIAL"` to exercise the non-routing short-circuit.
 
 ## Baselines
 
-| Embedder | Accuracy | Notes |
-|---|---|---|
-| stub (keyword one-hot) | **12/12 = 100%** | plumbing guard; a unit smoke asserts this |
-| Ollama `nomic-embed-text` (threshold 0.25) | **12/12 = 100%** | realistic (English) input + SOCIAL skip |
+| Embedder | Suite | Accuracy | Notes |
+|---|---|---|---|
+| stub (keyword one-hot) | single-tenant | **12/12 = 100%** | plumbing guard; a unit smoke asserts this |
+| Ollama `nomic-embed-text` (thr 0.25) | single + ported | **21/21 = 100%** | realistic English input + SOCIAL skip; ported parent cases incl. close-semantic all pass |
 
 ## Why an earlier run showed 83%
 

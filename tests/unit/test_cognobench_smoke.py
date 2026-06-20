@@ -4,7 +4,7 @@ Ollama (mirrors cogno-core's cognobench smoke). The deterministic keyword embedd
 must route every curated case correctly.
 """
 
-from cognobench.routing_cases import CASES, CATALOG
+from cognobench.routing_cases import ALL_CASES, CASES, CATALOG, TENANT_CASES
 from cognobench.runner import format_report, main, run_bench
 from cognobench.stub_embedder import StubEmbedder
 
@@ -19,8 +19,16 @@ async def test_stub_bench_is_perfect():
 
 async def test_catalog_well_formed():
     ids = {p.persona_id for p in CATALOG}
-    # every case's expected persona exists in the catalog
+    # every single-tenant case's expected persona exists in the shared catalog
     assert {c.expected for c in CASES} <= ids
+
+
+async def test_tenant_cases_well_formed():
+    # each ported tenant case's expected is either its base or one of its own personas
+    for c in TENANT_CASES:
+        allowed = {p.persona_id for p in c.personas} | {c.base}
+        assert c.expected in allowed, f"{c.query!r}: {c.expected} not in {allowed}"
+    assert ALL_CASES == CASES + TENANT_CASES
 
 
 async def test_format_report_renders_summary():
