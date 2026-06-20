@@ -1,6 +1,6 @@
 """Unit tests for the embedding-based PersonaSelector."""
 
-from cogno_persona import PersonaSelector, cosine
+from cogno_persona import PersonaSelector, Reranker, cosine
 
 
 def test_cosine_edges():
@@ -88,3 +88,91 @@ async def test_precomputed_vectors_skip_embedding(personas):
     res = await sel.select("my dog needs a vet", personas, base_persona_id="SECRETARY",
                            candidate_vectors=vectors)
     assert res.persona_id == "VETERINARY" and res.matched is True
+
+
+# ── SOCIAL skip (non-routing intent) ─────────────────────────────────────
+async def test_social_intent_skips_routing_no_embedding(personas):
+    class BoomEmbedder:
+        async def embed(self, text):
+            raise AssertionError("must not embed for a non-routing intent")
+
+    sel = PersonaSelector(BoomEmbedder())
+    res = await sel.select("my dog needs a vet", personas, base_persona_id="SECRETARY",
+                           intent_class="SOCIAL")
+    assert res.persona_id == "SECRETARY" and res.matched is False
+
+
+async def test_non_social_intent_still_routes(embedder, personas):
+    sel = PersonaSelector(embedder)
+    res = await sel.select("my dog needs a vet", personas, base_persona_id="SECRETARY",
+                           intent_class="ACTION_REQUEST")
+    assert res.persona_id == "VETERINARY"
+
+
+async def test_custom_non_routing_intents(embedder, personas):
+    sel = PersonaSelector(embedder, non_routing_intents={"GREETING"})
+    res = await sel.select("my dog needs a vet", personas, base_persona_id="SECRETARY",
+                           intent_class="GREETING")
+    assert res.persona_id == "SECRETARY" and res.matched is False
+
+
+# ── N:N identity filter (restrict_to) ────────────────────────────────────
+async def test_restrict_to_limits_competition(embedder, personas):
+    # The veterinary query, but the identity may only use BOOKKEEPER/SECRETARY.
+    sel = PersonaSelector(embedder)
+    res = await sel.select("my dog needs a vet", personas, base_persona_id="SECRETARY",
+                           restrict_to={"BOOKKEEPER", "SECRETARY"})
+    assert res.persona_id != "VETERINARY"  # filtered out → cannot win
+
+
+async def test_restrict_to_allows_specialist(embedder, personas):
+    sel = PersonaSelector(embedder)
+    res = await sel.select("my dog needs a vet", personas, base_persona_id="SECRETARY",
+                           restrict_to={"VETERINARY", "SECRETARY"})
+    assert res.persona_id == "VETERINARY"
+
+
+async def test_restrict_to_empty_falls_back(embedder, personas):
+    sel = PersonaSelector(embedder)
+    res = await sel.select("my dog needs a vet", personas, base_persona_id="SECRETARY",
+                           restrict_to=set())
+    assert res.persona_id == "SECRETARY" and res.matched is False
+
+
+# ── Reranker seam ────────────────────────────────────────────────────────
+async def test_reranker_reorders_shortlist(personas):
+    # Craft a 2-candidate shortlist (VET & BOOKKEEPER both clear threshold), then
+    # a reranker that scores the LAST shortlist doc highest — proving the seam,
+    # not cosine, drives the final pick.
+    class TwoAxisEmbedder:
+        async def embed(self, text):
+            return [1.0, 1.0, 0.0]  # overlaps both VET([1,0,0]) and BOOK([0,1,0])
+
+    class FlipReranker:
+        async def rerank(self, query, documents):
+            return [float(i) for i in range(len(documents))]  # last doc wins
+
+    vectors = {"VETERINARY": [1, 0, 0], "BOOKKEEPER": [0, 1, 0], "SECRETARY": [0, 0, 1]}
+    sel = PersonaSelector(TwoAxisEmbedder())
+    plain = await sel.select("ambiguous query", personas, base_persona_id="SECRETARY",
+                             candidate_vectors=vectors)
+    reranked = await sel.select("ambiguous query", personas, base_persona_id="SECRETARY",
+                                candidate_vectors=vectors, reranker=FlipReranker())
+    assert plain.matched is True and reranked.matched is True
+    assert reranked.persona_id != plain.persona_id    # reranker flipped the head
+    assert isinstance(FlipReranker(), Reranker)        # runtime-checkable Protocol
+
+
+async def test_reranker_not_called_below_threshold(personas):
+    class BoomReranker:
+        async def rerank(self, query, documents):
+            raise AssertionError("must not rerank when nothing clears threshold")
+
+    class ZeroEmbedder:
+        async def embed(self, text):
+            return [0.0, 0.0, 0.0]  # everything scores 0 → below threshold
+
+    sel = PersonaSelector(ZeroEmbedder())
+    res = await sel.select("anything at all", personas, base_persona_id="SECRETARY",
+                           reranker=BoomReranker())
+    assert res.persona_id == "SECRETARY" and res.matched is False

@@ -22,8 +22,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
       - name: Lint (ruff)
-        run: ruff check cogno_persona tests examples
+        run: ruff check cogno_persona cognobench tests examples
       - name: Type-check (mypy)
         run: mypy cogno_persona
       - name: Unit tests
         run: pytest tests/unit -q --cov=cogno_persona --cov-report=term-missing --cov-fail-under=90
+      - name: Routing bench smoke (deterministic, no network)
+        run: python cognobench.py --stub --min-score 100
+      - name: Integration tests (auto-skip without Ollama / cogno-synapse)
+        run: pytest tests/integration -q

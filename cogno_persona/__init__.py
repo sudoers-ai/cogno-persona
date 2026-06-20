@@ -22,7 +22,7 @@ from cogno_persona.loader import (
     load_prompt,
     parse_frontmatter,
 )
-from cogno_persona.selector import PersonaSelector, cosine
+from cogno_persona.selector import PersonaSelector, Reranker, cosine
 from cogno_persona.store import FilePersonaStore, InMemoryPersonaStore, PersonaStore
 from cogno_persona.types import (
     PROMPT_SLOTS,
@@ -49,6 +49,7 @@ __all__ = [
     "FilePersonaStore",
     # selector
     "PersonaSelector",
+    "Reranker",
     "cosine",
     # compose
     "compose_prompt",

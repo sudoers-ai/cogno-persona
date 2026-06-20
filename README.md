@@ -79,13 +79,21 @@ from cogno_persona import PersonaSelector
 
 selector = PersonaSelector(embedder, threshold=0.25)   # any cogno-synapse Embedder
 result = await selector.select(
-    "my dog is sick", candidates=await store.list(), base_persona_id="SECRETARY",
+    noumeno.rewritten,                       # the canonical-English text (post-NOUMENO)
+    candidates=await store.list(),
+    base_persona_id="SECRETARY",
+    intent_class=intent.intent_class,        # SOCIAL → base, no embedding
+    restrict_to=identity.allowed_personas,   # N:N — compete only among allowed
 )
 result.persona_id, result.matched, result.score
 ```
 
 Pure scoring (base penalty + inertia boost + threshold); the host owns candidate
-loading and embedding caches (pass `candidate_vectors=` to skip re-embedding).
+loading and embedding caches (pass `candidate_vectors=` to skip re-embedding). For
+a tenant with many *similar* personas, inject a `reranker=` (a `Reranker` Protocol —
+a host-provided cross-encoder) to reorder the above-threshold shortlist; it is off
+by default and unnecessary for small catalogs. See
+[cognobench/ROUTING_BENCH_RESULTS.md](cognobench/ROUTING_BENCH_RESULTS.md).
 
 ### 5. `compose` — assemble the effective prompt
 
