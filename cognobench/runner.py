@@ -23,7 +23,7 @@ from cognobench.stub_embedder import StubEmbedder
 @dataclass(frozen=True)
 class CaseResult:
     query: str
-    lang: str
+    intent: str
     expected: str
     predicted: str
     score: float
@@ -58,9 +58,12 @@ async def run_bench(
     selector = PersonaSelector(embedder, threshold=threshold)
     results: List[CaseResult] = []
     for case in cases:
-        res = await selector.select(case.query, personas, base_persona_id=base_id)
+        res = await selector.select(
+            case.query, personas, base_persona_id=base_id,
+            intent_class=case.intent or None,
+        )
         results.append(CaseResult(
-            query=case.query, lang=case.lang, expected=case.expected,
+            query=case.query, intent=case.intent or "-", expected=case.expected,
             predicted=res.persona_id, score=round(res.score, 3),
             hit=res.persona_id == case.expected,
         ))
@@ -68,12 +71,12 @@ async def run_bench(
 
 
 def format_report(report: BenchReport) -> str:
-    lines = ["", "  ok  lang  score   expected → predicted   query", "  " + "─" * 70]
+    lines = ["", "  ok  intent  score   expected → predicted   query", "  " + "─" * 72]
     for r in report.results:
         mark = "✅" if r.hit else "❌"
         arrow = f"{r.expected} → {r.predicted}"
-        lines.append(f"  {mark}  {r.lang:<4}  {r.score:>5.2f}  {arrow:<22}  {r.query[:34]}")
-    lines.append("  " + "─" * 70)
+        lines.append(f"  {mark}  {r.intent:<6}  {r.score:>5.2f}  {arrow:<22}  {r.query[:32]}")
+    lines.append("  " + "─" * 72)
     lines.append(f"  routing accuracy: {report.hits}/{report.total} = {report.accuracy:.1f}%")
     return "\n".join(lines)
 

@@ -2,10 +2,13 @@
 Curated persona catalog + routing cases.
 
 The catalog is a small multi-domain tenant (a base SECRETARY + three specialists).
-Each case is a user query labelled with the persona that *should* win — including
-cross-lingual (PT-BR/EN) queries, since cross-lingual embeddings have a narrower
-cosine range (the reason the selector's default threshold is 0.25, not ~0.45).
-A case with ``expected="SECRETARY"`` (the base) asserts the query is generic
+
+**The query is the text the selector actually sees in the pipeline:
+``noumeno.rewritten`` — canonical English** (NOUMENO always rewrites before the
+selector runs), so routing is monolingual. Each case keeps the pre-NOUMENO
+``original`` (PT/EN) for documentation only. ``intent`` carries the NER class; a
+``SOCIAL`` case exercises the selector's non-routing short-circuit (→ base, no
+embedding). A case with ``expected="SECRETARY"`` asserts the query is generic
 enough that no specialist should hijack it.
 """
 
@@ -30,26 +33,32 @@ CATALOG: list[Persona] = [
 
 @dataclass(frozen=True)
 class RoutingCase:
-    query: str
+    query: str          # the canonical-English text the selector sees (post-NOUMENO)
     expected: str
-    lang: str = "en"
+    intent: str = ""    # NER intent_class; "SOCIAL" exercises the non-routing skip
+    original: str = ""  # pre-NOUMENO original (documentation only)
     note: str = ""
 
 
 CASES: list[RoutingCase] = [
-    # ── specialist hits (EN) ────────────────────────────────────────────
-    RoutingCase("my dog has been vomiting since yesterday", "VETERINARY", "en"),
-    RoutingCase("can I book a vet appointment for my cat's vaccine?", "VETERINARY", "en"),
-    RoutingCase("what's my current account balance and unpaid invoices?", "BOOKKEEPER", "en"),
-    RoutingCase("I need to record a payment and an expense for last month", "BOOKKEEPER", "en"),
-    RoutingCase("I'd like to reserve a table for four tonight", "RESTAURANT", "en"),
-    RoutingCase("what's on the menu and what time do you close?", "RESTAURANT", "en"),
-    # ── specialist hits (PT-BR, cross-lingual vs EN descriptions) ───────
-    RoutingCase("meu cachorro está vomitando e não quer comer", "VETERINARY", "pt"),
-    RoutingCase("preciso marcar a vacina do meu gato", "VETERINARY", "pt"),
-    RoutingCase("qual o saldo da minha conta e as faturas em aberto?", "BOOKKEEPER", "pt"),
-    RoutingCase("quero reservar uma mesa para o jantar de sexta", "RESTAURANT", "pt"),
-    # ── base fallbacks (generic → no specialist should win) ─────────────
-    RoutingCase("hi, can you help me with something?", "SECRETARY", "en", "generic greeting"),
-    RoutingCase("bom dia, tudo bem?", "SECRETARY", "pt", "social greeting"),
+    # ── specialist hits (originally EN) ──────────────────────────────────
+    RoutingCase("my dog has been vomiting since yesterday", "VETERINARY"),
+    RoutingCase("can I book a vet appointment for my cat's vaccine?", "VETERINARY"),
+    RoutingCase("what is my current account balance and unpaid invoices?", "BOOKKEEPER"),
+    RoutingCase("I need to record a payment and an expense for last month", "BOOKKEEPER"),
+    RoutingCase("I'd like to reserve a table for four tonight", "RESTAURANT"),
+    RoutingCase("what is on the menu and what time do you close?", "RESTAURANT"),
+    # ── specialist hits (NOUMENO-rewritten from PT-BR) ───────────────────
+    RoutingCase("my dog is vomiting and refuses to eat", "VETERINARY",
+                original="meu cachorro está vomitando e não quer comer"),
+    RoutingCase("I need to schedule my cat's vaccine", "VETERINARY",
+                original="preciso marcar a vacina do meu gato"),
+    RoutingCase("what is my account balance and my open invoices?", "BOOKKEEPER",
+                original="qual o saldo da minha conta e as faturas em aberto?"),
+    RoutingCase("I want to reserve a table for Friday dinner", "RESTAURANT",
+                original="quero reservar uma mesa para o jantar de sexta"),
+    # ── base fallbacks (generic / social → no specialist should win) ─────
+    RoutingCase("hi, can you help me with something?", "SECRETARY", note="generic"),
+    RoutingCase("good morning, how are you?", "SECRETARY", intent="SOCIAL",
+                original="bom dia, tudo bem?", note="social greeting → skip routing"),
 ]

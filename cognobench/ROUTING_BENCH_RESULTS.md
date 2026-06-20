@@ -1,40 +1,47 @@
 # Persona routing bench — results
 
 `python3 cognobench.py` scores the `PersonaSelector` on 12 curated cases (a base
-`SECRETARY` + 3 specialists; EN + PT-BR queries). Run `--stub` for a deterministic
-keyword embedder (no network) or the default for a real Ollama embedder.
+`SECRETARY` + 3 specialists). Run `--stub` for a deterministic keyword embedder
+(no network) or the default for a real Ollama embedder.
+
+**The queries are canonical English** — the text the selector actually sees in the
+pipeline, since NOUMENO rewrites every input to English *before* routing. Cases
+keep their pre-NOUMENO `original` (PT) for documentation; the `SOCIAL` greeting
+case carries `intent="SOCIAL"` to exercise the non-routing short-circuit.
 
 ## Baselines
 
 | Embedder | Accuracy | Notes |
 |---|---|---|
 | stub (keyword one-hot) | **12/12 = 100%** | plumbing guard; a unit smoke asserts this |
-| Ollama `nomic-embed-text` (threshold 0.25) | **10/12 = 83.3%** | see failure modes below |
+| Ollama `nomic-embed-text` (threshold 0.25) | **12/12 = 100%** | realistic (English) input + SOCIAL skip |
 
-## Failure modes (Ollama `nomic-embed-text`, 2026-06-20)
+## Why an earlier run showed 83%
 
-1. **Cross-lingual miss** — `"meu cachorro está vomitando e não quer comer"`
-   routed to **RESTAURANT (0.47)** over VETERINARY (0.45). PT query vs EN
-   descriptions: the correct specialist scored just *below* a competitor. This is
-   the embedding model's weak cross-lingual range, not a selector bug — it is the
-   reason the default threshold is a low 0.25.
+The first cut fed **raw Portuguese** queries — unrealistic, because the selector
+receives `noumeno.rewritten` (English). With English input the two misses vanish:
 
-2. **Generic greeting hijacked** — `"bom dia, tudo bem?"` routed to
-   **RESTAURANT (0.49)** instead of the SECRETARY base. A social greeting cleared
-   the 0.25 threshold against a specialist by noise.
+- The PT veterinary query that lost by 0.02 (RESTAURANT 0.47 vs VET 0.44) becomes
+  `"my dog is vomiting and refuses to eat"` → **VETERINARY 0.54**, a clean win.
+- The greeting `"bom dia"` that a specialist hijacked at 0.49 now carries
+  `intent="SOCIAL"` → the selector **skips embedding entirely** → base.
 
-## Mitigations (host policy — the core only signals)
+So for the common case — **a small catalog of distinct personas, English input** —
+plain cosine routing saturates. This matches the product reality: many tenants,
+most with few personas.
 
-- **Skip the selector for SOCIAL/greeting intent** (route straight to base), as the
-  parent did off NER `intent_class`. Failure #2 disappears entirely. The pure
-  selector deliberately leaves this to the host (`select()` is only called when the
-  host wants routing).
-- **Use a stronger multilingual embedding model** for PT↔EN tenants — `nomic-embed-text`
-  is weak cross-lingually; this lifts failure #1.
-- **Calibrate the threshold** with `--threshold`; note there is no single value that
-  fixes both (raising it to drop the greeting also drops a legit 0.45 specialist) —
-  the real lever is model quality + the SOCIAL skip.
+## Levers (host policy — the core only signals)
 
-The integration test (`tests/integration/test_selector_live.py`) gates the clear
-English specialist cases exactly and the overall accuracy at a **75% floor** to
-catch regressions without being flaky on the known cross-lingual cases.
+- **`intent_class`** — pass the NER intent; `SOCIAL` (configurable
+  `non_routing_intents`) routes straight to base, no embedding cost.
+- **`restrict_to`** — when an identity is allowed only a subset of personas (N:N),
+  competition is limited to that set.
+- **`reranker`** — an optional injected cross-encoder reorders the above-threshold
+  shortlist. **Default off; not needed for small catalogs.** Build a concrete
+  reranker only for a tenant with many *similar* personas (mirror cogno-engram's
+  reranker; note the recurring per-turn model-call cost). A lexical BM25 hybrid was
+  evaluated and **dropped** — its IDF is degenerate over a handful of short
+  descriptions. See the `persona-routing-quality` design note.
+
+The integration test gates the clear specialist cases exactly and overall accuracy
+at a **90% floor** to catch regressions without being brittle to embedding drift.

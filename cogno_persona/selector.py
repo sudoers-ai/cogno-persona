@@ -8,20 +8,35 @@ The host loads the candidate personas (e.g. from a ``PersonaStore``) and injects
 ``Embedder``; caching is a host concern (wrap the embedder, or pass precomputed
 ``candidate_vectors``).
 
+In the real pipeline the ``query`` is ``noumeno.rewritten`` — **canonical English**
+(NOUMENO always rewrites), so routing is monolingual; the cross-lingual caveat on
+the threshold only applies if a host feeds raw multilingual text.
+
 Scoring (all weights configurable):
-  * ``base_penalty`` nudges the base persona down so a clear specialist can win
-    (only applied when ``apply_base_penalty`` — the host derives that from intent;
-    e.g. skip it for SOCIAL/greeting queries so the base persona wins naturally).
+  * ``intent_class`` in ``non_routing_intents`` (default ``{"SOCIAL"}``) → straight to
+    base, no embedding (a greeting has no domain; the parent skipped it off NER too).
+  * ``restrict_to`` competes only among the personas an *identity* is allowed (N:N).
+  * ``base_penalty`` nudges the base persona down so a clear specialist can win.
   * an inertia ``inertia_boost`` favours the currently active persona, decayed by
     ``correction_decay`` (e.g. number of prior SUPEREGO rejections).
-  * a match must clear ``threshold`` (default 0.25 — cross-lingual embeddings have
-    a narrower cosine range than the monolingual ~0.45).
+  * a match must clear ``threshold`` (default 0.25).
+  * an optional injected ``reranker`` reorders the above-threshold shortlist — the
+    seam for tenants with many similar personas (default off; core stays zero-dep).
 """
 
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Dict, List, Optional, Sequence
+from typing import (
+    TYPE_CHECKING,
+    Collection,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Sequence,
+    runtime_checkable,
+)
 
 from cogno_persona.types import Persona, SelectionResult
 
@@ -44,6 +59,19 @@ def cosine(a: Sequence[float], b: Sequence[float]) -> float:
     return dot / (mag_a * mag_b)
 
 
+@runtime_checkable
+class Reranker(Protocol):
+    """A relevance re-scorer over a shortlist (a cross-encoder, injected by the host).
+
+    Given the query and one document per candidate (``"<id>: <description>"``),
+    return a relevance score per document, highest = most relevant. Optional: a
+    plain cosine ``PersonaSelector`` never needs one. The concrete cross-encoder
+    is a host concern (mirror cogno-engram's reranker shape).
+    """
+
+    async def rerank(self, query: str, documents: Sequence[str]) -> Sequence[float]: ...
+
+
 class PersonaSelector:
     """Score personas against a query and return the best (or the base fallback)."""
 
@@ -54,11 +82,15 @@ class PersonaSelector:
         threshold: float = 0.25,
         base_penalty: float = 0.10,
         inertia_boost: float = 0.05,
+        non_routing_intents: Collection[str] = frozenset({"SOCIAL"}),
+        rerank_top_k: int = 5,
     ) -> None:
         self._embedder = embedder
         self.threshold = threshold
         self.base_penalty = base_penalty
         self.inertia_boost = inertia_boost
+        self.non_routing_intents = frozenset(non_routing_intents)
+        self.rerank_top_k = rerank_top_k
 
     async def select(
         self,
@@ -71,14 +103,28 @@ class PersonaSelector:
         correction_decay: int = 0,
         threshold: Optional[float] = None,
         candidate_vectors: Optional[Dict[str, List[float]]] = None,
+        intent_class: Optional[str] = None,
+        restrict_to: Optional[Collection[str]] = None,
+        reranker: Optional[Reranker] = None,
     ) -> SelectionResult:
         """Return the closest persona, or the base when nothing clears the threshold.
 
-        ``candidate_vectors`` (id → embedding) lets a host inject precomputed/cached
-        description embeddings to skip re-embedding. The base persona is the
-        fast-path winner for empty/short queries (no embedding cost).
+        ``intent_class`` short-circuits non-routing intents (e.g. ``SOCIAL``) to the
+        base with no embedding. ``restrict_to`` limits competition to an identity's
+        allowed personas. ``candidate_vectors`` (id → embedding) lets a host inject
+        precomputed embeddings to skip re-embedding. ``reranker`` (if injected)
+        reorders the above-threshold shortlist.
         """
         fallback = base_persona_id or (candidates[0].persona_id if candidates else "")
+
+        # (2) Non-routing intent (SOCIAL/greeting) → base, no embedding cost.
+        if intent_class and intent_class in self.non_routing_intents:
+            return SelectionResult(persona_id=fallback, matched=False)
+
+        # (3) N:N identity filter — compete only among allowed personas.
+        if restrict_to is not None:
+            allowed = set(restrict_to)
+            candidates = [p for p in candidates if p.persona_id in allowed]
 
         if not candidates or not query or len(query.strip()) < _MIN_QUERY_LEN:
             return SelectionResult(persona_id=fallback, matched=False)
@@ -87,6 +133,7 @@ class PersonaSelector:
         if not query_vec:
             return SelectionResult(persona_id=fallback, matched=False)
 
+        by_id: Dict[str, Persona] = {p.persona_id: p for p in candidates}
         scores: List[tuple[str, float]] = []
         for persona in candidates:
             pid = persona.persona_id
@@ -103,6 +150,20 @@ class PersonaSelector:
         scores.sort(key=lambda s: s[1], reverse=True)
         eff_threshold = threshold if threshold is not None else self.threshold
         top_id, top_score = scores[0]
-        if top_score >= eff_threshold:
+        if top_score < eff_threshold:
+            return SelectionResult(persona_id=fallback, score=top_score, matched=False, scores=scores)
+
+        if reranker is None:
             return SelectionResult(persona_id=top_id, score=top_score, matched=True, scores=scores)
-        return SelectionResult(persona_id=fallback, score=top_score, matched=False, scores=scores)
+
+        # Optional rerank stage: re-score the above-threshold shortlist (top-k).
+        shortlist = [(pid, s) for pid, s in scores if s >= eff_threshold][: self.rerank_top_k]
+        docs = [f"{pid}: {by_id[pid].description}" for pid, _ in shortlist]
+        rerank_scores = await reranker.rerank(query, docs)
+        reranked = sorted(
+            ((shortlist[i][0], float(rerank_scores[i])) for i in range(len(shortlist))),
+            key=lambda s: s[1],
+            reverse=True,
+        )
+        best_id, best_score = reranked[0]
+        return SelectionResult(persona_id=best_id, score=best_score, matched=True, scores=reranked)

@@ -63,11 +63,12 @@ async def test_routes_clear_english_specialists(query, expected):
 
 @requires_embed
 async def test_overall_accuracy_floor():
-    # nomic-embed-text baseline is ~83%; floor at 75% catches regressions without
-    # being flaky on the known cross-lingual cases (see ROUTING_BENCH_RESULTS.md).
+    # With English (post-NOUMENO) queries + the SOCIAL skip, nomic-embed-text routes
+    # the realistic cases at 100%. Floor at 90% to catch regressions without being
+    # brittle to one-off embedding drift (see ROUTING_BENCH_RESULTS.md).
     from cognobench.runner import run_bench
     report = await run_bench(_embedder())
-    assert report.accuracy >= 75.0, f"routing accuracy regressed to {report.accuracy:.1f}%"
+    assert report.accuracy >= 90.0, f"routing accuracy regressed to {report.accuracy:.1f}%"
 
 
 @requires_embed
