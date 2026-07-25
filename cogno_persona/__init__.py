@@ -14,6 +14,15 @@ Adapted from the parent cogno's ``core/prompt_loader.py`` + ``ego/persona*.py``,
 with all the CoreDB/channel/env infra left to the host.
 """
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _dist_version
+
+try:
+    __version__ = _dist_version("cogno-persona")
+except PackageNotFoundError:  # source tree without an installed dist (e.g. vendored checkout)
+    __version__ = "0.0.0"
+
+
 from cogno_persona.compose import CUSTOM_RULES_HEADER, compose_prompt, render
 from cogno_persona.loader import (
     current_version,
