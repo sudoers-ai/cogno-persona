@@ -110,21 +110,34 @@ class PersonaSelector:
         """Return the closest persona, or the base when nothing clears the threshold.
 
         ``intent_class`` short-circuits non-routing intents (e.g. ``SOCIAL``) to the
-        base with no embedding. ``restrict_to`` limits competition to an identity's
-        allowed personas. ``candidate_vectors`` (id → embedding) lets a host inject
-        precomputed embeddings to skip re-embedding. ``reranker`` (if injected)
-        reorders the above-threshold shortlist.
+        fallback with no embedding. ``restrict_to`` limits competition to an identity's
+        allowed personas — and governs the fallback too: when the base is not among
+        them, every non-matching path lands on one of *their* personas, never the
+        base. ``candidate_vectors`` (id → embedding) lets a host inject precomputed
+        embeddings to skip re-embedding. ``reranker`` (if injected) reorders the
+        above-threshold shortlist.
         """
         fallback = base_persona_id or (candidates[0].persona_id if candidates else "")
 
-        # (2) Non-routing intent (SOCIAL/greeting) → base, no embedding cost.
-        if intent_class and intent_class in self.non_routing_intents:
-            return SelectionResult(persona_id=fallback, matched=False)
-
-        # (3) N:N identity filter — compete only among allowed personas.
+        # (2) N:N identity filter FIRST — the identity's allowed set governs EVERY
+        # path, including the shortcuts below: a restricted identity's "Oi" (short
+        # query) or "obrigado!" (SOCIAL) must land on one of THEIR personas. The
+        # parent applied this filter only inside the scoring loop, so all its early
+        # exits leaked the tenant base to identities that had not marked it.
         if restrict_to is not None:
             allowed = set(restrict_to)
             candidates = [p for p in candidates if p.persona_id in allowed]
+            if candidates and fallback not in allowed:
+                # The base is not the identity's to use → the first allowed candidate
+                # (caller order) takes the fallback role instead.
+                fallback = candidates[0].persona_id
+            # Empty after filtering (the tenant disabled everything the identity had
+            # marked): the fallback stays the base — a misconfiguration must degrade
+            # to "the base answers", never to "nobody answers". The host logs it.
+
+        # (3) Non-routing intent (SOCIAL/greeting) → fallback, no embedding cost.
+        if intent_class and intent_class in self.non_routing_intents:
+            return SelectionResult(persona_id=fallback, matched=False)
 
         if not candidates or not query or len(query.strip()) < _MIN_QUERY_LEN:
             return SelectionResult(persona_id=fallback, matched=False)

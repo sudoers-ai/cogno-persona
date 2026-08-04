@@ -139,6 +139,56 @@ async def test_restrict_to_empty_falls_back(embedder, personas):
     assert res.persona_id == "SECRETARY" and res.matched is False
 
 
+# ── restrict_to governs the FALLBACK too (the parent leaked the base here) ──
+
+async def test_restricted_short_query_falls_to_identity_persona(embedder, personas):
+    # "Oi"/"ok" (short-query fast path): an identity marked {VETERINARY, BOOKKEEPER}
+    # must land on one of THEIRS — the tenant base is not theirs to use.
+    sel = PersonaSelector(embedder)
+    res = await sel.select("ok", personas, base_persona_id="SECRETARY",
+                           restrict_to={"VETERINARY", "BOOKKEEPER"})
+    assert res.persona_id != "SECRETARY"
+    assert res.persona_id in {"VETERINARY", "BOOKKEEPER"}
+    assert res.matched is False
+
+
+async def test_restricted_social_intent_falls_to_identity_persona(embedder, personas):
+    # SOCIAL short-circuit ("obrigado!"): same rule — never leak the base.
+    sel = PersonaSelector(embedder)
+    res = await sel.select("thank you so much!", personas, base_persona_id="SECRETARY",
+                           intent_class="SOCIAL", restrict_to={"VETERINARY"})
+    assert res.persona_id == "VETERINARY" and res.matched is False
+
+
+async def test_restricted_below_threshold_falls_to_identity_persona(embedder, personas):
+    # Off-domain query scoring below threshold: the fallback is one of the identity's
+    # personas, not the base.
+    sel = PersonaSelector(embedder)
+    res = await sel.select("tell me a poem about the sky", personas,
+                           base_persona_id="SECRETARY", restrict_to={"BOOKKEEPER"})
+    assert res.persona_id == "BOOKKEEPER" and res.matched is False
+
+
+async def test_restricted_fallback_keeps_base_when_marked(embedder, personas):
+    # The identity marked the base too → the base is legitimately theirs; short
+    # query falls back to it as before.
+    sel = PersonaSelector(embedder)
+    res = await sel.select("ok", personas, base_persona_id="SECRETARY",
+                           restrict_to={"SECRETARY", "VETERINARY"})
+    assert res.persona_id == "SECRETARY" and res.matched is False
+
+
+async def test_restricted_fallback_uses_caller_order(embedder, personas):
+    # Deterministic pick: the FIRST allowed candidate in caller order takes the
+    # fallback role (not a random set-iteration order).
+    sel = PersonaSelector(embedder)
+    first_allowed = next(p.persona_id for p in personas
+                         if p.persona_id in {"VETERINARY", "BOOKKEEPER"})
+    res = await sel.select("ok", personas, base_persona_id="SECRETARY",
+                           restrict_to={"VETERINARY", "BOOKKEEPER"})
+    assert res.persona_id == first_allowed
+
+
 # ── Reranker seam ────────────────────────────────────────────────────────
 async def test_reranker_reorders_shortlist(personas):
     # Craft a 2-candidate shortlist (VET & BOOKKEEPER both clear threshold), then
