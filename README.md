@@ -117,19 +117,19 @@ as data; the engine turns them into the block the execution prompt carries.
 ```python
 from cogno_persona import Capability, render_capabilities, validate_capabilities
 
-REMIND = Capability(
-    name="remind", purpose="Schedule a reminder at an exact time.", family="remind",
+REFUND = Capability(
+    name="refund", purpose="Refund an order the customer already paid for.", family="billing",
     variants=(                                   # strongest first — one heading, two strengths
-        (frozenset({"remind_me", "resolve_date"}),
-         "## Reminder duty\nResolve the date with `resolve_date` first, then `remind_me`."),
-        (frozenset({"remind_me"}),
-         "## Reminder duty\nAsk the user for an exact date and time, then `remind_me`."),
+        (frozenset({"issue_refund", "lookup_order"}),
+         "## Refund duty\nCall `lookup_order` for the order id first, then `issue_refund`."),
+        (frozenset({"issue_refund"}),
+         "## Refund duty\nAsk the customer for the order id, then call `issue_refund`."),
     ))
-assert validate_capabilities([REMIND]) == []      # a deploy blocker, not a test concern
+assert validate_capabilities([REFUND]) == []      # a deploy blocker, not a test concern
 
-out = render_capabilities([REMIND], offered={"remind_me"})   # `resolve_date` masked this turn
+out = render_capabilities([REFUND], offered={"issue_refund"})  # `lookup_order` masked this turn
 out.text          # → the DEGRADED text: it never commands a tool the turn withholds
-out.rendered      # → ("remind",)  what this turn was actually told it could do
+out.rendered      # → ("refund",)  what this turn was actually told it could do
 out.unavailable   # → ()           what emitted and could render nothing, for the judge
 ```
 
