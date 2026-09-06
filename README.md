@@ -27,11 +27,11 @@ consume, so a host loads a persona and injects its prompts straight into the pip
 ## Install
 
 ```bash
-pip install cogno-persona          # model + loader + store + selector + compose
+pip install cogno-persona          # model + loader + store + selector + compose + capabilities
 pip install "cogno-persona[yaml]"  # + YAML frontmatter parsing in prompts
 ```
 
-## Five pieces
+## Six pieces
 
 ### 1. `Persona` — the typed container (pydantic)
 
@@ -108,6 +108,39 @@ system = compose_prompt(vet, "system", base=GLOBAL_RULES,
 Pure assembly only — channel brevity, language pins, correction feedback and the
 like stay host concerns (append them yourself).
 
+### 6. `capabilities` — the engine that appends what the agent may DO
+
+A **capability** is a group of tools with a purpose and a way of composing them
+("to cancel a reminder, list first to get the id, then cancel"). You declare yours
+as data; the engine turns them into the block the execution prompt carries.
+
+```python
+from cogno_persona import Capability, render_capabilities, validate_capabilities
+
+REMIND = Capability(
+    name="remind", purpose="Schedule a reminder at an exact time.", family="remind",
+    variants=(                                   # strongest first — one heading, two strengths
+        (frozenset({"remind_me", "resolve_date"}),
+         "## Reminder duty\nResolve the date with `resolve_date` first, then `remind_me`."),
+        (frozenset({"remind_me"}),
+         "## Reminder duty\nAsk the user for an exact date and time, then `remind_me`."),
+    ))
+assert validate_capabilities([REMIND]) == []      # a deploy blocker, not a test concern
+
+out = render_capabilities([REMIND], offered={"remind_me"})   # `resolve_date` masked this turn
+out.text          # → the DEGRADED text: it never commands a tool the turn withholds
+out.rendered      # → ("remind",)  what this turn was actually told it could do
+out.unavailable   # → ()           what emitted and could render nothing, for the judge
+```
+
+**The engine is here; the table is yours.** Nothing in it knows a capability's name,
+family or text — which capabilities exist is product content, and the gates
+(`emitting_capabilities(table, wired=..., emitting=...)`) are answers you pass in.
+The defect it removes is a prompt that commands a tool the turn withholds: a variant
+renders only when `requires ⊆ offered`, and when none fits, `unavailable` says what it
+would have taken — the fact a judge needs to tell *"there was no tool"* from *"there was
+a tool and it went unused"*.
+
 ## Design
 
 | Principle | How |
@@ -116,7 +149,8 @@ like stay host concerns (append them yourself).
 | Infra-agnostic | no CoreDB / channel / env; the host loads & injects |
 | Runtime-light | one dep (`pydantic`); `Embedder` is type-only from cogno-synapse |
 | Aligned to anima | the four slots match the stage signatures exactly |
-| Pure helpers | loader/selector/compose have no I/O beyond reading prompt files |
+| Pure helpers | loader/selector/compose/capabilities have no I/O beyond reading prompt files |
+| Engine, not content | the capability ENGINE ships here; the TABLE of capabilities is the host's |
 
 See [docs/HOST_INTEGRATION.md](docs/HOST_INTEGRATION.md) and [LOGGING.md](LOGGING.md).
 
