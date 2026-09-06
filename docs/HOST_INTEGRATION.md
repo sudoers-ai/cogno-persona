@@ -32,6 +32,7 @@ Two options, both behind the `PersonaStore` port (`async get(id)` / `async list(
           row = await self._db.get_persona(self._tenant_id, persona_id)
           return Persona(persona_id=row["persona_id"], description=row["description"],
                          allowed_modules=[row["mcp_module"]] if row["mcp_module"] else [],
+                         domains=row.get("domains") or [],       # the subject it OWNS (§5-bis)
                          custom_rules=row.get("custom_rules", ""),
                          text_only=row.get("is_text_only", False),
                          prompts=load_persona_prompts(row)) or None
@@ -154,6 +155,29 @@ Pin a version per request (`load_persona(dir, version="v1")`,
 never imports or runs them. The host resolves each name into a `ToolDispatcher` for
 the EGO. This keeps the light declaration lib decoupled from the heavy,
 infra-bound execution layer (cogno-praxis).
+
+## 5-bis. The domain a persona OWNS is DECLARED
+
+`domains` is the subject matter a persona owns, in the perception layer's closed domain
+vocabulary (cogno-anima `NER_KNOWLEDGE_DOMAINS` — the same values the NER answers), so a
+host that wants to hand a turn to a specialist can join the two halves:
+
+```python
+turn_domain = ctx.intent.domains[0]                      # what the NER answered
+owners = [p for p in candidates if turn_domain in p.owned_domains]
+```
+
+**It is declared, not derived from `allowed_modules`.** Deriving ownership from the tool
+binding is only true of a persona that HAS a vertical: a prompts-only persona — one that
+interviews, sells or advises for a living — binds no module and would own nothing, so it
+could never be a hand-over target and the only way to reach it is to say its name.
+
+Two things this lib deliberately does not do with the field, both because it cannot:
+**it does not validate** the values against the closed list (cogno-persona declares and
+does not perceive; it takes no dependency on cogno-anima to hold a string), and **it does
+not arbitrate** two personas claiming the same domain — that is your catalogue's question,
+and a lib refusing a host's catalogue over a rule only the host can state would be the
+wrong layer saying no.
 
 ## 6. What cogno-persona does NOT do (host)
 

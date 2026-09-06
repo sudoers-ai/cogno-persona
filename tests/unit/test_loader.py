@@ -99,3 +99,21 @@ def test_parse_frontmatter_with_yaml():
     fm, body = parse_frontmatter("---\nname: voice\nv: 2\n---\nthe body")
     assert fm == {"name": "voice", "v": 2}
     assert body == "the body"
+
+
+def test_manifest_declares_domains(tmp_path: Path):
+    """A persona directory carries its declared domains like any other manifest field —
+    the on-disk store and a hand-written manifest must agree with the typed default."""
+    root = tmp_path / "INTERVIEWER"
+    root.mkdir()
+    (root / "persona.json").write_text(
+        '{"persona_id": "INTERVIEWER", "domains": ["marketing"], "allowed_modules": []}',
+        encoding="utf-8",
+    )
+    persona = load_persona(root)
+    assert persona.owned_domains == frozenset({"MARKETING"})   # normalised on load
+
+    bare = tmp_path / "BARE"
+    bare.mkdir()
+    (bare / "persona.json").write_text('{"persona_id": "BARE"}', encoding="utf-8")
+    assert load_persona(bare).owned_domains == frozenset()

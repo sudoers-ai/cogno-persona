@@ -4,6 +4,25 @@
 
 ### Added
 
+- **`Persona.domains` — the subject a persona OWNS, declared.** A list in the perception
+  layer's closed domain vocabulary (cogno-anima `NER_KNOWLEDGE_DOMAINS`), plus the derived
+  `owned_domains` set for the membership test every consumer makes. Nothing in this lib acts
+  on it: a host asking *"who owns this turn's domain?"* reads the field.
+
+  **Declared, not derived from `allowed_modules`.** Ownership was first inferred from the tool
+  binding, and that inference only holds for a persona that HAS a vertical: a prompts-only
+  persona — one that interviews, sells or advises for a living — binds no module, owned nothing
+  under the derived rule, and could therefore never be the target of a domain hand-over.
+  Measured on a live turn: a request squarely inside such a persona's subject resolved to no
+  owner at all, so the only way to reach it was to say its name.
+
+  Values are normalised at the door (upper-cased, trimmed, de-duplicated, order kept) so
+  `domains` and `owned_domains` can never disagree and a hand-written manifest compares equal
+  to one an admin UI wrote; a bare string is not exploded into characters. NOT validated
+  against the closed list here — this lib declares and does not perceive, so it takes no
+  dependency on cogno-anima to hold a string — and two personas claiming the same domain is
+  not refused: the arbitration is the host's catalogue question.
+
 - **`cogno_persona.capabilities` — the capability engine.** A *capability* is a group of
   tools with a purpose and a way of composing them; it is declared as data
   (`Capability`, with one or more `(requires, text)` variants) and assembled into the

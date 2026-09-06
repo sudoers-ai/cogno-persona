@@ -42,12 +42,21 @@ vet = Persona(
     persona_id="VETERINARY",
     description="pet health specialist",
     allowed_modules=["veterinary", "scheduler"],   # by-name binding (host resolves)
+    domains=["HEALTH"],                            # the subject it OWNS (NER vocabulary)
     custom_rules="Always confirm the pet's name first.",
     prompts=PersonaPrompts(system="You are the vet…", scope="…", limits="…", voice="…"),
 )
 vet.primary_module          # "veterinary"
+vet.owned_domains           # frozenset({"HEALTH"})
 vet.prompt("voice")         # the voice prompt text
 ```
+
+`domains` is **declared, not derived from `allowed_modules`**: a prompts-only persona
+binds no module and would otherwise own nothing, so the only way to reach it is to say
+its name. Values are normalised (upper-cased, trimmed, de-duplicated) and are the
+perception layer's closed domain vocabulary (cogno-anima `NER_KNOWLEDGE_DOMAINS`) — this
+lib does not import it to hold a string, and does not arbitrate two personas claiming the
+same domain: that is the host's catalogue question.
 
 ### 2. `loader` — version-aware loading from disk
 
@@ -146,6 +155,7 @@ a tool and it went unused"*.
 | Principle | How |
 |---|---|
 | Declaration, not execution | `allowed_modules` is names; the host runs tools (praxis) |
+| Declared, not inferred | `domains` says what a persona OWNS; a tool list is not a subject |
 | Infra-agnostic | no CoreDB / channel / env; the host loads & injects |
 | Runtime-light | one dep (`pydantic`); `Embedder` is type-only from cogno-synapse |
 | Aligned to anima | the four slots match the stage signatures exactly |
