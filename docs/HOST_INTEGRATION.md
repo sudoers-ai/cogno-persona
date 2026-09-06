@@ -93,6 +93,48 @@ await superego.evaluate(ctx_obj, backend, limits_prompt=limits_prompt)
 await superego.voice(ctx_obj, backend, voice_prompt=voice_prompt)
 ```
 
+## 3b. Appending capabilities to the execution prompt
+
+The execution prompt says *who the agent is*; a **capability** block says *what it may
+do this turn, and how*. Declare your capabilities as data and let the engine assemble
+the block — it renders a variant only when every tool that variant's text names is on
+the turn's real tool surface, which is what stops a prompt commanding a tool the turn
+withholds.
+
+```python
+from cogno_persona import (Capability, emitting_capabilities, render_capabilities,
+                           validate_capabilities)
+
+CAPABILITIES = (Capability(...), ...)          # YOUR table — product content
+errors = validate_capabilities(CAPABILITIES)   # fail the import, loudly, if malformed
+if errors:
+    raise ValueError("; ".join(errors))
+
+# 1. gates — YOUR answers: what the deployment was built with, what this turn offers
+caps = emitting_capabilities(CAPABILITIES, wired=families_wired, emitting=families_offered)
+
+# 2. selection + assembly, against the REAL surface (RBAC-scoped, read-only-masked, …)
+out = render_capabilities(caps, offered=tool_names_on_the_dispatcher)
+
+system_prompt = f"{system_prompt}\n\n{out.text}" if out.text else system_prompt
+trace["capabilities"] = out.rendered            # what this turn was told it could do
+judge_metadata["unavailable"] = [               # …and what it had no tool for
+    {"capability": m.capability, "missing": list(m.missing)} for m in out.unavailable]
+```
+
+Three things stay yours by design:
+
+- **the table** — which capabilities exist, their families, their prompt text;
+- **the gates** — `wired`/`emitting`/`offered` are answers, computed from your wiring,
+  your RBAC and your dispatcher. The engine never reads a gate, and a gate never reads
+  the table;
+- **the tail** — `render_capabilities(..., suffixes={"name": text})` appends per-turn
+  data the static table cannot hold (a list of what is reachable right now, say).
+
+Give `unavailable` to whatever judges the reply. Without it a judge cannot tell *"there
+was no tool"* from *"there was a tool and it went unused"* — both look like *(no tools
+executed)*, and only one of them makes *"I can't do that"* an honest answer.
+
 ## 4. Versioning prompts
 
 Drop a `<name>_meta.json` next to a prompt to A/B or roll back without renaming:
@@ -118,6 +160,8 @@ infra-bound execution layer (cogno-praxis).
 - **DB/cache** for personas (you implement `PersonaStore`).
 - **Embedding** and its caching/TTL (you inject the embedder).
 - **Tool execution / MCP / RBAC** — that is praxis + the EGO dispatcher.
+- **The capability TABLE** — the engine assembles blocks; which capabilities exist,
+  what they say and which gates they ride are yours.
 - **Channel brevity, language pins, correction feedback, UI manuals** — append to
   the composed prompts yourself.
 - **Reading env / `COGNO_*` vars** — pass values via `context=` / constructor args.

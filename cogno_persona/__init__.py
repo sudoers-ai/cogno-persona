@@ -4,11 +4,14 @@ cogno-persona — the prompt store for **who a Cogno agent IS**.
 Light, infra-agnostic declaration/config: the typed ``Persona`` (scope/execution/
 limits/voice prompts + identity + an opaque by-name binding to allowed modules +
 custom rules), a version-aware loader from disk, a ``PersonaStore`` retrieval seam
-(in-memory + file defaults), an embedding-based ``PersonaSelector``, and pure
-prompt ``compose`` helpers. The four prompt slots line up with the cogno-anima
-stage signatures — the host loads a persona and injects its prompts into the
-pipeline. This lib never executes anything: ``allowed_modules`` is just names the
-host resolves into tool dispatchers (persona = declaration, praxis = execution).
+(in-memory + file defaults), an embedding-based ``PersonaSelector``, pure prompt
+``compose`` helpers, and a ``capabilities`` engine that turns a host's own
+declared capability table into the block a persona's execution prompt carries (the
+ENGINE is here; the TABLE — which capabilities exist and what they say — is the
+host's). The four prompt slots line up with the cogno-anima stage signatures — the
+host loads a persona and injects its prompts into the pipeline. This lib never
+executes anything: ``allowed_modules`` is just names the host resolves into tool
+dispatchers (persona = declaration, praxis = execution).
 
 Adapted from the parent cogno's ``core/prompt_loader.py`` + ``ego/persona*.py``,
 with all the CoreDB/channel/env infra left to the host.
@@ -23,6 +26,16 @@ except PackageNotFoundError:  # source tree without an installed dist (e.g. vend
     __version__ = "0.0.0"
 
 
+from cogno_persona.capabilities import (
+    Capability,
+    CapabilityRender,
+    MissingCapability,
+    Variant,
+    emitting_capabilities,
+    render_capabilities,
+    select_variant,
+)
+from cogno_persona.capabilities import validate as validate_capabilities
 from cogno_persona.compose import CUSTOM_RULES_HEADER, compose_prompt, render
 from cogno_persona.loader import (
     current_version,
@@ -64,4 +77,13 @@ __all__ = [
     "compose_prompt",
     "render",
     "CUSTOM_RULES_HEADER",
+    # capabilities (the engine; the table is the host's)
+    "Capability",
+    "Variant",
+    "MissingCapability",
+    "CapabilityRender",
+    "validate_capabilities",
+    "emitting_capabilities",
+    "select_variant",
+    "render_capabilities",
 ]
