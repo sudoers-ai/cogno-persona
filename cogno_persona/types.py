@@ -99,11 +99,17 @@ class Persona(BaseModel):
         and no consumer re-derives the normalisation. A non-sequence is left to
         pydantic's own type error; a plain string is NOT split (``"MARKETING"`` is one
         domain, not nine characters).
+
+        A ``set``/``frozenset`` is SORTED first: its iteration order varies between
+        processes, and the same persona must not come out of two workers with its
+        domains in two different orders (the rule cogno-anima's
+        ``sanitize_voice_traits`` already follows, for the same reason).
         """
         if isinstance(raw, str) or not isinstance(raw, (list, tuple, set, frozenset)):
             return raw
+        items = sorted(raw, key=str) if isinstance(raw, (set, frozenset)) else raw
         seen: List[str] = []
-        for item in raw:
+        for item in items:
             if not isinstance(item, str):
                 return raw          # let pydantic report the real type error
             value = item.strip().upper()

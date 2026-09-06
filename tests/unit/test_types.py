@@ -98,3 +98,11 @@ def test_two_personas_may_declare_the_same_domain():
 def test_domains_round_trip_through_a_dict():
     p = Persona(persona_id="X", domains=["MARKETING"], allowed_modules=["scheduler"])
     assert Persona(**p.model_dump()) == p
+
+
+def test_a_set_of_domains_comes_out_in_a_stable_order():
+    """A set's iteration order varies between processes; the same persona must not come
+    out of two workers with its domains in two different orders."""
+    raw = {"MARKETING", "FINANCE", "TECH", "HEALTH", "TRAVEL", "LAW"}
+    from_set = Persona(persona_id="X", domains=raw).domains
+    assert from_set == ["FINANCE", "HEALTH", "LAW", "MARKETING", "TECH", "TRAVEL"]
