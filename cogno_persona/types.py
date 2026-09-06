@@ -19,9 +19,9 @@ No infra here: a Persona is pure data the host loads (from disk via
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, FrozenSet, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # The canonical prompt slots, in pipeline order.
 PROMPT_SLOTS = ("system", "scope", "limits", "voice")
@@ -49,6 +49,8 @@ class Persona(BaseModel):
     that the host resolves into dispatchers — the persona lib never imports or
     executes anything. ``custom_rules`` are tenant-authored mandatory rules the
     composer appends to the execution prompt.
+
+    ``domains`` is the subject matter the persona OWNS, declared — see the field.
     """
 
     persona_id: str
@@ -56,14 +58,68 @@ class Persona(BaseModel):
     version: str = "current"
     prompts: PersonaPrompts = Field(default_factory=PersonaPrompts)
     allowed_modules: List[str] = Field(default_factory=list)
+    # ── The knowledge domains this persona OWNS, DECLARED ────────────────────────────
+    #
+    # The vocabulary is the perception layer's closed domain list (cogno-anima's
+    # ``NER_KNOWLEDGE_DOMAINS``): a turn's domain is what the NER answers, so a persona
+    # saying which of those it owns is the two halves of one join. A host asking "who
+    # owns this turn's domain?" reads this field; nothing here acts on it.
+    #
+    # **Declared, not derived from ``allowed_modules``.** Ownership was first inferred
+    # from the tool binding, and that inference is only true of a persona that HAS a
+    # vertical: a prompts-only persona — one that interviews, sells or advises for a
+    # living — binds no module, and under the derived rule owned nothing and could
+    # therefore never be the target of a domain hand-over. Measured on a live turn: a
+    # request squarely inside such a persona's subject resolved to no owner at all, so
+    # the only way to reach it was to say its name. Which subject a persona owns is a
+    # product decision; a tool list is an implementation detail, and the two stopped
+    # agreeing the first time a persona was built out of prompts alone.
+    #
+    # A persona declaring none owns none — the default, and the honest reading of an
+    # unanswered question. Two personas declaring the SAME domain is not resolved here:
+    # this lib holds the declaration, the host owns the arbitration (an ambiguous owner
+    # is a catalogue question, and refusing it at construction would make a lib refuse a
+    # host's catalogue over a rule the host is the only one able to state).
+    #
+    # NOT validated against the closed list here, deliberately: cogno-persona declares
+    # and does not perceive, so it does not depend on cogno-anima to hold a string. The
+    # values are normalised (upper-cased, trimmed, de-duplicated, order kept) so that a
+    # manifest written by hand and one written by an admin UI compare equal.
+    domains: List[str] = Field(default_factory=list)
     custom_rules: str = ""
     text_only: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("domains", mode="before")
+    @classmethod
+    def _normalise_domains(cls, raw: Any) -> Any:
+        """Upper-case, trim, drop blanks, de-duplicate — order preserved.
+
+        Applied at the door so ``domains`` and :attr:`owned_domains` can never disagree
+        and no consumer re-derives the normalisation. A non-sequence is left to
+        pydantic's own type error; a plain string is NOT split (``"MARKETING"`` is one
+        domain, not nine characters).
+        """
+        if isinstance(raw, str) or not isinstance(raw, (list, tuple, set, frozenset)):
+            return raw
+        seen: List[str] = []
+        for item in raw:
+            if not isinstance(item, str):
+                return raw          # let pydantic report the real type error
+            value = item.strip().upper()
+            if value and value not in seen:
+                seen.append(value)
+        return seen
 
     @property
     def primary_module(self) -> str | None:
         """The first bound module name, or ``None`` if the persona binds none."""
         return self.allowed_modules[0] if self.allowed_modules else None
+
+    @property
+    def owned_domains(self) -> FrozenSet[str]:
+        """The declared domains as a set, for the membership test every consumer makes."""
+        return frozenset(self.domains)
 
     def prompt(self, slot: str) -> str:
         """Shortcut for ``persona.prompts.get(slot)``."""
