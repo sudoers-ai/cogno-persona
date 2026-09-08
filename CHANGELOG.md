@@ -4,6 +4,26 @@
 
 ### Added
 
+- **`cogno_persona.skills` — the skill declaration layer, mechanism only.** `SkillInfo` +
+  `skill_tier`/`SKILL_TIERS` (a catalog row and its ONE gating class, read as a single value
+  rather than three booleans — a row carrying both `is_default` and `is_premium` gates in
+  opposite directions and is a mistake, not an "either"), `TenantSkill` + `TenantSkillStore`
+  (per-`(tenant, skill)` enablement) and `CORE_SCOPE` + `PersonaSkillStore` (persona↔skill
+  bindings, `scope=""` global and `scope=<tenant>` per tenant), each with a zero-dependency
+  in-memory default — the same seam `PersonaStore` uses. **The catalog is the host's**: which
+  skills exist, what they cost, which plan grants them and which role may reach them never
+  arrive here, exactly as `capabilities` takes the table as a parameter.
+
+  Two rules travel with the ports because each was got wrong by a caller that had re-derived it
+  alone. **A row survives being switched off** (`TenantSkill.enabled`): deleting on disable made
+  "the admin turned this off" and "this was never seeded" the same state, so no backfill could
+  tell them apart — three attempts produced three different production defects. **A full sync of
+  the empty set is a full delete** (`refuses_clear` + `PersonaSkillClearRefused`): an admin panel
+  that loaded a persona's bindings lazily and saved from another tab posted the set it had never
+  read, and five live bindings went to zero under a green toast. The refusal is a pure function
+  at the one waist every writer passes, and a caller that MEANT to clear says so.
+
+
 - **`Persona.domains` — the subject a persona OWNS, declared.** A list in the perception
   layer's closed domain vocabulary (cogno-anima `NER_KNOWLEDGE_DOMAINS`), plus the derived
   `owned_domains` set for the membership test every consumer makes. Nothing in this lib acts
