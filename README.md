@@ -31,7 +31,7 @@ pip install cogno-persona          # model + loader + store + selector + compose
 pip install "cogno-persona[yaml]"  # + YAML frontmatter parsing in prompts
 ```
 
-## Six pieces
+## Seven pieces
 
 ### 1. `Persona` — the typed container (pydantic)
 
@@ -149,6 +149,42 @@ The defect it removes is a prompt that commands a tool the turn withholds: a var
 renders only when `requires ⊆ offered`, and when none fits, `unavailable` says what it
 would have taken — the fact a judge needs to tell *"there was no tool"* from *"there was
 a tool and it went unused"*.
+
+### 7. `skills` — the finer binding, and the two rules that travel with it
+
+`allowed_modules` binds a persona to whole verticals. `cogno_persona.skills` is the binding one
+notch down — individual skills, bound to a persona and gated per tenant. Same division as
+`capabilities`: the **mechanism** ships here, the **catalog** stays with the host. Nothing in
+this module names a skill.
+
+```python
+from cogno_persona import (CORE_SCOPE, InMemoryPersonaSkillStore,
+                           InMemoryTenantSkillStore, SkillInfo, TenantSkill, skill_tier)
+
+skill_tier(SkillInfo(id="x", is_premium=True))                  # "premium"
+skill_tier(SkillInfo(id="x", is_premium=True, is_default=True))  # "" — two gates, not one
+
+tenant = InMemoryTenantSkillStore()
+await tenant.enable("acme", "x", can_guest=True)   # → True: something actually changed
+await tenant.disable("acme", "x")                  # the row STAYS, switched off
+
+bindings = InMemoryPersonaSkillStore()
+await bindings.set_skills(CORE_SCOPE, "secretary", ["x", "y"])   # global, every tenant
+await bindings.set_skills("acme", "secretary", ["z"])            # one tenant's extra
+await bindings.set_skills(CORE_SCOPE, "secretary", [])           # PersonaSkillClearRefused
+```
+
+Both rules are here because a caller got each wrong in production, and neither defect is visible
+on the happy path:
+
+- **A row survives being switched off.** Deleting on disable made "the admin turned this off"
+  and "this was never seeded" the same state in the database, so every backfill was guessing —
+  three attempts, three different defects.
+- **A full sync of the empty set is a full DELETE.** An admin panel that loaded a persona's
+  bindings lazily, and saved from a different tab, posted the set it had never read: `[]`. Five
+  bindings to zero, green toast. `refuses_clear` is that decision, pure and shared, so the API
+  route, the seed, the migration and the script nobody has written yet cannot each get it wrong
+  alone. A caller that MEANT to clear passes `allow_clear=True` and is obeyed.
 
 ## Design
 
