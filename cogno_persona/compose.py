@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from typing import Mapping, Optional
 
+from cogno_persona.config_keys import render_config_keys
 from cogno_persona.types import Persona
 
 # Header for the tenant-authored rules appended to the execution prompt.
@@ -48,10 +49,21 @@ def compose_prompt(
 ) -> str:
     """Build the final prompt text for one stage slot.
 
-    Order: ``base`` (optional global rules) → the persona's slot prompt → the
-    ``custom_rules`` block (only for the ``system``/execution slot when
-    ``append_rules`` and rules exist) → ``{placeholder}`` substitution last so it
-    reaches every section.
+    Order: ``base`` (optional global rules) → the persona's slot prompt → the DECLARED
+    configuration block → the ``custom_rules`` block (both only for the ``system``/execution
+    slot when ``append_rules``, and only when there is something to render) →
+    ``{placeholder}`` substitution last so it reaches every section.
+
+    The declared keys go BEFORE the prose, and that order is the point rather than a
+    preference: ``custom_rules`` is where a tenant's settings live TODAY, so a persona
+    part-migrated to declared keys has the same fact in both places for a while. Whichever
+    comes second reads as the correction of the first, and the declaration is the half a tool
+    also acts on — a model told one rate and a tool given another is the divergence this
+    module exists to close, so the prose must not be the last word about a declared key.
+
+    ``config_keys`` renders through :func:`~cogno_persona.config_keys.render_config_keys`,
+    which is expressed over the SAME by-name mapping a tool reads: a key that no tool can ask
+    for by name cannot appear here, by construction and not by convention.
     """
     parts = []
     if base.strip():
@@ -59,6 +71,10 @@ def compose_prompt(
     slot_text = persona.prompt(slot).strip()
     if slot_text:
         parts.append(slot_text)
+    if append_rules and slot == "system":
+        block = render_config_keys(persona.config_keys)
+        if block:
+            parts.append(block)
     if append_rules and slot == "system" and persona.custom_rules.strip():
         parts.append(f"{CUSTOM_RULES_HEADER}\n\n{persona.custom_rules.strip()}")
     return render("\n\n".join(parts), context)
