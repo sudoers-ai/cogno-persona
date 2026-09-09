@@ -27,7 +27,7 @@ consume, so a host loads a persona and injects its prompts straight into the pip
 ## Install
 
 ```bash
-pip install cogno-persona          # model + loader + store + selector + compose + capabilities
+pip install cogno-persona          # model + loader + store + selector + compose + capabilities + config keys
 pip install "cogno-persona[yaml]"  # + YAML frontmatter parsing in prompts
 ```
 
@@ -186,6 +186,41 @@ on the happy path:
   route, the seed, the migration and the script nobody has written yet cannot each get it wrong
   alone. A caller that MEANT to clear passes `allow_clear=True` and is obeyed.
 
+
+### 8. `config_keys` — configuration read by the model AND by the tools, from ONE declaration
+
+`custom_rules` is prose, and prose has exactly one reader: the model. A tool that needs the
+same fact — the hourly rate, the column a total lives in, a threshold — cannot ask for it by
+name. A declared key has **two** readers and they are the same declaration, not a copy.
+
+```python
+from cogno_persona import Persona, compose_prompt, config_values, sanitize_config_keys
+
+kept, dropped = sanitize_config_keys(
+    '[{"name": "PAY_RATE_PER_HOUR", "value": "120,00", "type": "number",
+       "label": "Valor/hora do professor"}]')
+assert dropped == ()                       # the door names what it refuses, and never raises
+
+vet = Persona(persona_id="coordinator", config_keys=kept, prompts={"system": "..."})
+
+config_values(vet.config_keys)["PAY_RATE_PER_HOUR"]   # READING 1 — what a TOOL asks, by name
+"PAY_RATE_PER_HOUR" in compose_prompt(vet, "system")  # READING 2 — what the MODEL reads
+```
+
+`render_config_keys` is **expressed over** `config_values`: the prompt block asks for the
+by-name mapping and renders what came back, so a key that leaves one reading leaves the other
+in the same edit. That is structural, not a convention a reviewer has to enforce.
+
+The types (`text | number | boolean`) are a promise the door checks: a `number` that does not
+parse is refused **at save time**, in front of whoever is typing it, instead of at question
+time as "not configured" in front of a contact.
+
+**A key is a scalar; long content is knowledge.** `MAX_CONFIG_VALUE_CHARS` is 200 and it is
+enforced — an over-long value is dropped with reason `too_long` and named back, so a host's
+admin API can refuse it. The number is measured: in the production row this came from, the
+longest declared value is 27 characters and configuration is **5.4%** of a 13 187-character
+blob. The other 94.6% is what a knowledge base is for.
+
 ## Design
 
 | Principle | How |
@@ -197,6 +232,7 @@ on the happy path:
 | Aligned to anima | the four slots match the stage signatures exactly |
 | Pure helpers | loader/selector/compose/capabilities have no I/O beyond reading prompt files |
 | Engine, not content | the capability ENGINE ships here; the TABLE of capabilities is the host's |
+| One declaration, two readings | `render_config_keys` is expressed over `config_values`, so prompt and tool cannot drift |
 
 See [docs/HOST_INTEGRATION.md](docs/HOST_INTEGRATION.md) and [LOGGING.md](LOGGING.md).
 

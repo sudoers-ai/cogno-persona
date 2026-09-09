@@ -10,7 +10,10 @@ declared capability table into the block a persona's execution prompt carries (t
 ENGINE is here; the TABLE — which capabilities exist and what they say — is the
 host's), and a ``skills`` layer for the finer binding: the catalog row's shape, the
 per-tenant enablement port and the persona↔skill binding port (again the mechanism
-only — WHICH skills exist is the host's catalog). The four prompt slots line up with the cogno-anima stage signatures — the
+only — WHICH skills exist is the host's catalog), and ``config_keys``: configuration a
+persona DECLARES as typed name/value pairs, read BOTH by the model (a prompt block) and
+by the tools (by name) from ONE declaration — prose only ever had the first reader.
+The four prompt slots line up with the cogno-anima stage signatures — the
 host loads a persona and injects its prompts into the pipeline. This lib never
 executes anything: ``allowed_modules`` is just names the host resolves into tool
 dispatchers (persona = declaration, praxis = execution).
@@ -39,6 +42,21 @@ from cogno_persona.capabilities import (
 )
 from cogno_persona.capabilities import validate as validate_capabilities
 from cogno_persona.compose import CUSTOM_RULES_HEADER, compose_prompt, render
+from cogno_persona.config_keys import (
+    CONFIG_DROP_REASONS,
+    CONFIG_KEY_TYPES,
+    CONFIG_KEYS_HEADER,
+    MAX_CONFIG_CARRIER_CHARS,
+    MAX_CONFIG_KEYS,
+    MAX_CONFIG_LABEL_CHARS,
+    MAX_CONFIG_NAME_CHARS,
+    MAX_CONFIG_VALUE_CHARS,
+    ConfigKey,
+    DroppedKey,
+    config_values,
+    render_config_keys,
+    sanitize_config_keys,
+)
 from cogno_persona.loader import (
     current_version,
     list_versions,
@@ -92,6 +110,20 @@ __all__ = [
     "compose_prompt",
     "render",
     "CUSTOM_RULES_HEADER",
+    # config keys (the mechanism; WHICH keys a persona carries is the host's)
+    "ConfigKey",
+    "DroppedKey",
+    "CONFIG_KEY_TYPES",
+    "CONFIG_DROP_REASONS",
+    "CONFIG_KEYS_HEADER",
+    "MAX_CONFIG_KEYS",
+    "MAX_CONFIG_NAME_CHARS",
+    "MAX_CONFIG_VALUE_CHARS",
+    "MAX_CONFIG_LABEL_CHARS",
+    "MAX_CONFIG_CARRIER_CHARS",
+    "sanitize_config_keys",
+    "config_values",
+    "render_config_keys",
     # capabilities (the engine; the table is the host's)
     "Capability",
     "Variant",

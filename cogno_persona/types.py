@@ -23,6 +23,8 @@ from typing import Any, Dict, FrozenSet, List
 
 from pydantic import BaseModel, Field, field_validator
 
+from cogno_persona.config_keys import ConfigKey, sanitize_config_keys
+
 # The canonical prompt slots, in pipeline order.
 PROMPT_SLOTS = ("system", "scope", "limits", "voice")
 
@@ -87,6 +89,22 @@ class Persona(BaseModel):
     # manifest written by hand and one written by an admin UI compare equal.
     domains: List[str] = Field(default_factory=list)
     custom_rules: str = ""
+    # ── Configuration the tenant DECLARES, read by the model AND by the tools ────────────
+    #
+    # ``custom_rules`` is prose and prose has one reader: the model. A key declared here has
+    # two — ``config_values`` hands a tool the value BY NAME, ``render_config_keys`` puts it in
+    # the prompt — and they are the same declaration, not a copy. See
+    # :mod:`cogno_persona.config_keys` for the mechanism, the boundary that keeps a knowledge
+    # body out of a config key, and the production measurement that says why prose could not
+    # serve as the tool's channel.
+    #
+    # NORMALISED AT THE DOOR, like ``domains``: whatever a manifest, an admin API or a text
+    # column hands over goes through ``sanitize_config_keys``, so a ``Persona`` can never hold
+    # a key that would be refused at save time. What the door DROPS is not reported here — a
+    # pydantic validator has nowhere to put it and a persona that refused to load over one bad
+    # key would cost a tenant its whole agent. The host calls ``sanitize_config_keys`` itself
+    # where the drops have a reader (its admin API answers 422 and names them).
+    config_keys: List[ConfigKey] = Field(default_factory=list)
     text_only: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
@@ -117,10 +135,33 @@ class Persona(BaseModel):
                 seen.append(value)
         return seen
 
+    @field_validator("config_keys", mode="before")
+    @classmethod
+    def _normalise_config_keys(cls, raw: Any) -> Any:
+        """Run every carrier through the one door — see :func:`sanitize_config_keys`.
+
+        ``None``/absent stays empty. The dropped half is discarded HERE and only here: this
+        validator has no channel to report it and refusing to build the persona would trade a
+        misconfigured key for no agent at all. The host's admin API calls the same function
+        directly, where a 422 can name what it refused.
+        """
+        kept, _dropped = sanitize_config_keys(raw)
+        return list(kept)
+
     @property
     def primary_module(self) -> str | None:
         """The first bound module name, or ``None`` if the persona binds none."""
         return self.allowed_modules[0] if self.allowed_modules else None
+
+    @property
+    def config(self) -> Dict[str, str]:
+        """The declared configuration BY NAME — the reading a tool makes.
+
+        The same mapping :func:`~cogno_persona.config_keys.render_config_keys` renders from, so
+        this property and the prompt block are two readings of one declaration, never two.
+        """
+        from cogno_persona.config_keys import config_values
+        return config_values(self.config_keys)
 
     @property
     def owned_domains(self) -> FrozenSet[str]:
