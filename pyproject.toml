@@ -1,6 +1,6 @@
 [project]
 name = "cogno-persona"
-version = "0.1.0"
+version = "0.1.1"
 description = "The prompt store for who a Cogno agent IS — a typed Persona (scope/execution/limits/voice prompts + by-name module binding + custom rules), version-aware loader, retrieval store, embedding selector, and pure prompt composition. Infra-agnostic, host-injected."
 readme = "README.md"
 requires-python = ">=3.10"
